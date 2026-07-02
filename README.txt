@@ -1,8 +1,8 @@
-NICK MERIDIAN REBUILD V3 — GITHUB READY
+NICK MERIDIAN REBUILD V4 — GITHUB READY
 
 Upload all files in this ZIP to the root of the clean Nick Meridian rebuild repository.
 
-V3 test changes:
+V4 test changes:
 - Calendar page now shows calendar + time clock only.
 - Tapping a date opens a separate day-agenda page.
 - Removed redundant Client top tab.
@@ -13,4 +13,4 @@ V3 test changes:
 - Full receipt system remains under Banking > Receipts.
 - Added Admin section for backup, recovery, reports, guide, view mode, and refresh controls.
 
-Data storage key remains nick_meridian_rebuild_v1 so test data from V1 remains available during this V3 upgrade.
+Data storage key remains nick_meridian_rebuild_v1 so test data from V1 remains available during this V4 upgrade.

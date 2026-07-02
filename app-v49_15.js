@@ -2814,7 +2814,115 @@ function openReceiptFolder(folderId){
 }
 function setSupplyReceiptView(view){state.supplyReceiptView=view==='list'?'list':'grid';save('receipt-view-v3');openSupplyReceiptsManager();}
 
-function renderAdminPage(){return `<div class="titleRow"><div><h2>Admin</h2><p>Backups, recovery, reports, and app controls.</p></div><span class="buildBadge">NICK REBUILD V3</span></div>${renderAdminBackupPanel()}${renderHumanReportPanel()}<div class="box"><h3>App Controls</h3><div class="actions"><button onclick="toggleViewMode()">Switch Mobile/Desktop View</button><button onclick="openTutorial()">Open Guide</button><button onclick="forceFreshApp()">Refresh App Files</button></div><p class="note">Export a backup before major updates.</p></div>`;}
+function renderAdminPage(){return `<div class="titleRow"><div><h2>Admin</h2><p>Backups, recovery, reports, and app controls.</p></div><span class="buildBadge">NICK REBUILD V4</span></div>${renderAdminBackupPanel()}${renderHumanReportPanel()}<div class="box"><h3>App Controls</h3><div class="actions"><button onclick="toggleViewMode()">Switch Mobile/Desktop View</button><button onclick="openTutorial()">Open Guide</button><button onclick="forceFreshApp()">Refresh App Files</button></div><p class="note">Export a backup before major updates.</p></div>`;}
 
 save('nick-rebuild-v3-migration');
+setTimeout(render,0);
+
+/* =========================================================
+   NICK MERIDIAN REBUILD V4 PATCH
+   Narrow navigation correction only:
+   - Schedule always enters month view
+   - Day/Add opens agenda
+   - Event save/cancel returns to month view
+   - Client Add opens blank form; directory item opens saved form
+   ========================================================= */
+
+const _v4SetSection = setSection;
+setSection = function(s){
+  if(s==='schedule'){
+    state.scheduleDayView=false;
+    state.dayEventEditor=false;
+    state.dayEventEditIndex=null;
+  }
+  if(s==='clients') state.clientFileView=false;
+  return _v4SetSection(s);
+};
+
+const _v4SetTab = setTab;
+setTab = function(t){
+  if(state.section==='schedule'&&t==='calendar'){
+    state.scheduleDayView=false;
+    state.dayEventEditor=false;
+    state.dayEventEditIndex=null;
+  }
+  if(state.section==='clients'&&t==='directory') state.clientFileView=false;
+  return _v4SetTab(t);
+};
+
+function openCalendarAdd(){
+  const today=dateKey(new Date());
+  const selected=state.selectedDate&&String(state.selectedDate).startsWith(`${state.year}-${String((state.month??0)+1).padStart(2,'0')}`)
+    ? state.selectedDate : today;
+  state.selectedDate=selected;
+  const p=parseKey(selected);state.year=p.y;state.month=p.m;
+  state.scheduleDayView=true;
+  state.dayEventEditor=false;
+  state.dayEventEditIndex=null;
+  save('calendar-add-open-agenda');
+  render();
+}
+
+function renderScheduleCalendar(){
+ let y=state.year||now.getFullYear(),m=state.month??now.getMonth();state.year=y;state.month=m;
+ let first=new Date(y,m,1).getDay(),total=new Date(y,m+1,0).getDate(),todayKey=dateKey(new Date());
+ let monthTabs=MONTHS.map((name,i)=>`<button class="monthBtn ${i===m?'active':''}" onclick="setCalendarMonth(${i})">${name}</button>`).join('');
+ let days=['SUN','MON','TUE','WED','THU','FRI','SAT'].map(d=>`<div>${d}</div>`).join(''),grid='';
+ for(let i=0;i<first;i++)grid+=`<div class="calDay blank"></div>`;
+ for(let d=1;d<=total;d++){
+  let k=makeKey(y,m,d),agenda=ensureDay(k).agenda||[];
+  let previews=agenda.slice(0,2).map(item=>`<div class="preview ${item.canceled?'canceled':''}">${formatTime(item.time)}: ${escapeHtml(item.title||'')}</div>`).join('');
+  if(agenda.length>2)previews+=`<div class="preview">+${agenda.length-2} more</div>`;
+  grid+=`<div class="calDay ${k===todayKey?'today':''}" onclick="openCalendarDay('${k}')"><div class="dayNum">${d}</div>${previews}</div>`;
+ }
+ return `<div class="monthTabs">${monthTabs}</div><div class="calendarTitle"><button onclick="changeCalendarYear(-1)">‹ ${y-1}</button><h2>${FULL_MONTHS[m]} ${y}</h2><div class="calendarTitleActions"><button class="save" onclick="openCalendarAdd()">+ Add</button><button onclick="changeCalendarYear(1)">${y+1} ›</button></div></div><div class="weekdays">${days}</div><div class="calendarGrid">${grid}</div><div class="calendarClockOnly">${renderTimeCardModule()}</div>`;
+}
+
+function closeDayEventEditor(){
+  state.dayEventEditor=false;
+  state.dayEventEditIndex=null;
+  state.scheduleDayView=false;
+  save('cancel-day-event-to-month');
+  render();
+}
+
+function saveDayEvent(){
+ const title=document.getElementById('dayEventTitle')?.value.trim();if(!title)return alert('Enter an event title.');
+ const startDate=document.getElementById('dayEventStartDate')?.value||state.selectedDate,endDate=document.getElementById('dayEventEndDate')?.value||startDate,time=document.getElementById('dayEventStartTime')?.value||'',endTime=document.getElementById('dayEventEndTime')?.value||'';
+ const item={id:uid(),type:'event',title,date:startDate,endDate,time,endTime,allDay:!!document.getElementById('dayEventAllDay')?.checked,reminder:document.getElementById('dayEventReminder')?.value||'none',notes:document.getElementById('dayEventNotes')?.value||'',canceled:false};
+ const oldData=ensureDay(state.selectedDate),idx=Number.isInteger(state.dayEventEditIndex)?state.dayEventEditIndex:null;
+ if(idx!==null){const old=oldData.agenda[idx]||{};item.id=old.id||item.id;oldData.agenda.splice(idx,1);}
+ ensureDay(startDate).agenda.push(item);state.selectedDate=startDate;let p=parseKey(startDate);state.year=p.y;state.month=p.m;state.dayEventEditor=false;state.dayEventEditIndex=null;state.scheduleDayView=false;save('day-event-save-to-month');render();
+}
+
+function deleteDayEvent(){
+ let idx=state.dayEventEditIndex;if(!Number.isInteger(idx))return;if(!confirm('Delete this event?'))return;
+ ensureDay(state.selectedDate).agenda.splice(idx,1);state.dayEventEditor=false;state.dayEventEditIndex=null;state.scheduleDayView=false;save('day-event-delete-to-month');render();
+}
+
+function openNewClientJob(){
+ state.clientFileView=false;
+ state.selectedClient='';
+ if(!state.drafts)state.drafts={};
+ state.drafts.newClient={name:'',phone:'',address:'',notes:''};
+ save('open-blank-client-form');
+ renderAddClientForm();
+}
+
+function saveNewClient(){
+ let name=document.getElementById('newClientName')?.value.trim();
+ if(!name)return alert('Enter a client name.');
+ if(!state.clients)state.clients={};
+ state.clients[name]={name,phone:document.getElementById('newClientPhone')?.value||'',address:document.getElementById('newClientAddress')?.value||'',notes:document.getElementById('newClientNotes')?.value||''};
+ state.selectedClient=name;state.clientFileView=true;state.section='clients';state.tabs.clients='directory';
+ if(state.drafts)delete state.drafts.newClient;
+ save('save-client-open-completed-form');
+ render();
+}
+
+// A fresh launch always starts on Schedule month view without clearing records.
+state.scheduleDayView=false;
+state.dayEventEditor=false;
+state.dayEventEditIndex=null;
+save('nick-rebuild-v4-migration');
 setTimeout(render,0);
