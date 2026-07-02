@@ -1,10 +1,10 @@
-const CACHE='legacycut-meridian-nick-rebuild-v1';
+const CACHE='legacycut-meridian-nick-rebuild-v2';
 const ASSETS=[
   './',
     './index.html',
   './manifest.json',
-  './style-v49_15.css?v=nick-rebuild-v1',
-  './app-v49_15.js?v=nick-rebuild-v1',
+  './style-v49_15.css?v=nick-rebuild-v2',
+  './app-v49_15.js?v=nick-rebuild-v2',
   './icon-192.png',
   './icon-512.png'
 ];

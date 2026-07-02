@@ -2605,3 +2605,111 @@ function renderSupplyItem(){
 
 save('nick-rebuild-v1-migration');
 setTimeout(render,0);
+
+/* =========================================================
+   NICK MERIDIAN REBUILD V2 — TEST REVISION
+   Calendar/day split, simplified navigation, equipment,
+   clean trackers, banking receipts, and Admin center.
+   ========================================================= */
+SECTIONS.schedule={sub:'Schedule / Calendar',tabs:[['calendar','Calendar','Calendar and time clock only.'],['newJob','New Job','Simple hourly or flat-rate job entry.'],['newEvent','New Event','Add personal events.']]};
+SECTIONS.clients={sub:'Clients / Directory',tabs:[['directory','Directory','Alphabetical client list.'],['invoices','Invoices','Optional manual invoices with multiple work lines.']]};
+SECTIONS.supplies={sub:'Supplies / Inventory',tabs:[['list','Supplies List','Supply inventory and separate usage tracking.'],['item','Item','Supply item details and usage history.'],['equipment','Equipment','Tools and equipment records.']]};
+SECTIONS.banking={sub:'Banking / Accounts',tabs:[['accounts','Accounts','Main spending and savings accounts.'],['trackers','Trackers','Money totals, savings goals, and spending categories.'],['receipts','Receipts','Receipt folders, camera capture, and uploads.']]};
+SECTIONS.admin={sub:'Admin / Backup & App Controls',tabs:[['admin','Admin','Backups, recovery, reports, and app controls.']]};
+if(!state.tabs)state.tabs={};
+state.tabs.admin='admin';
+if(state.tabs.clients==='client')state.tabs.clients='directory';
+if(!Array.isArray(state.equipment))state.equipment=[];
+if(!state.settings)state.settings={};
+
+function ensureV2Collections(){
+ ensureNickCollections();
+ if(!Array.isArray(state.equipment))state.equipment=[];
+ (state.invoices||[]).forEach(inv=>{if(!Array.isArray(inv.workLines))inv.workLines=[];});
+}
+
+function render(){
+ ensureV2Collections();applyViewMode();
+ if(!SECTIONS[state.section])state.section='schedule';
+ document.body.dataset.section=state.section;
+ if(!state.tabs[state.section]||!SECTIONS[state.section].tabs.some(t=>t[0]===state.tabs[state.section]))state.tabs[state.section]=SECTIONS[state.section].tabs[0][0];
+ document.querySelectorAll('.sideTab').forEach(b=>b.classList.toggle('active',b.dataset.section===state.section));
+ subtitle.textContent=SECTIONS[state.section].sub;
+ const visibleTabs=SECTIONS[state.section].tabs.filter(t=>!(state.section==='supplies'&&t[0]==='item'));
+ subtabs.innerHTML=visibleTabs.map(t=>{const active=state.tabs[state.section]===t[0]||(state.section==='supplies'&&state.tabs.supplies==='item'&&t[0]==='list');return `<button class="subtab ${active?'active':''}" onclick="setTab('${t[0]}')">${t[1]}</button>`}).join('');
+ const tab=SECTIONS[state.section].tabs.find(t=>t[0]===state.tabs[state.section])||SECTIONS[state.section].tabs[0];
+ if(state.section==='schedule'&&tab[0]==='calendar'){content.innerHTML=state.scheduleDayView?renderDayAgendaPage():renderScheduleCalendar();return;}
+ if(state.section==='schedule'&&tab[0]==='newJob'){content.innerHTML=renderJobForm();return;}
+ if(state.section==='schedule'&&tab[0]==='newEvent'){content.innerHTML=renderEventForm();return;}
+ if(state.section==='clients'&&tab[0]==='directory'){content.innerHTML=renderClientDirectory();return;}
+ if(state.section==='clients'&&tab[0]==='invoices'){content.innerHTML=renderClientInvoices();return;}
+ if(state.section==='supplies'&&tab[0]==='list'){content.innerHTML=renderSupplyList();return;}
+ if(state.section==='supplies'&&tab[0]==='item'){content.innerHTML=renderSupplyItem();return;}
+ if(state.section==='supplies'&&tab[0]==='equipment'){content.innerHTML=renderEquipment();return;}
+ if(state.section==='banking'&&tab[0]==='accounts'){content.innerHTML=renderBankingAccounts();return;}
+ if(state.section==='banking'&&tab[0]==='trackers'){content.innerHTML=renderBankingTrackers();return;}
+ if(state.section==='banking'&&tab[0]==='receipts'){content.innerHTML=renderBankingReceipts();return;}
+ if(state.section==='admin'){content.innerHTML=renderAdminPage();return;}
+ content.innerHTML=pageTemplate(state.section,tab);
+}
+
+function renderScheduleCalendar(){
+ let y=state.year||now.getFullYear(),m=state.month??now.getMonth();state.year=y;state.month=m;
+ let first=new Date(y,m,1).getDay(),total=new Date(y,m+1,0).getDate(),todayKey=dateKey(new Date());
+ let monthTabs=MONTHS.map((name,i)=>`<button class="monthBtn ${i===m?'active':''}" onclick="setCalendarMonth(${i})">${name}</button>`).join('');
+ let days=['SUN','MON','TUE','WED','THU','FRI','SAT'].map(d=>`<div>${d}</div>`).join(''),grid='';
+ for(let i=0;i<first;i++)grid+=`<div class="calDay blank"></div>`;
+ for(let d=1;d<=total;d++){
+  let k=makeKey(y,m,d),agenda=ensureDay(k).agenda||[];
+  let previews=agenda.slice(0,2).map(item=>`<div class="preview ${item.canceled?'canceled':''}">${formatTime(item.time)}: ${escapeHtml(item.title||'')}</div>`).join('');
+  if(agenda.length>2)previews+=`<div class="preview">+${agenda.length-2} more</div>`;
+  grid+=`<div class="calDay ${k===todayKey?'today':''}" onclick="openCalendarDay('${k}')"><div class="dayNum">${d}</div>${previews}</div>`;
+ }
+ return `<div class="monthTabs">${monthTabs}</div><div class="calendarTitle"><button onclick="changeCalendarYear(-1)">‹ ${y-1}</button><h2>${FULL_MONTHS[m]} ${y}</h2><button onclick="changeCalendarYear(1)">${y+1} ›</button></div><div class="weekdays">${days}</div><div class="calendarGrid">${grid}</div><div class="calendarClockOnly">${renderTimeCardModule()}</div>`;
+}
+function openCalendarDay(k){state.selectedDate=k;let p=parseKey(k);state.year=p.y;state.month=p.m;state.scheduleDayView=true;save('open-day-agenda');render();}
+function closeDayAgenda(){state.scheduleDayView=false;save('close-day-agenda');render();}
+function renderDayAgendaPage(){
+ let data=ensureDay(state.selectedDate),dt=new Date(state.selectedDate+'T12:00:00');
+ let rows=(data.agenda||[]).map((item,idx)=>`<div class="agendaDetailCard ${item.canceled?'canceled':''}"><div><b>${formatTime(item.time)} — ${escapeHtml(item.title||'Untitled')}</b><small>${escapeHtml(item.type||'agenda')}${item.client?' • '+escapeHtml(item.client):''}</small></div><div class="actions"><button class="smallBtn" onclick="toggleCancel(${idx})">${item.canceled?'Restore':'Cross Out'}</button>${item.type==='job'||item.type==='event'?`<button class="smallBtn" onclick="editAgendaItem(${idx})">Edit</button>`:''}</div></div>`).join('')||'<p class="note">Nothing scheduled for this day.</p>';
+ return `<div class="titleRow"><div><h2>${dt.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</h2><p>Day agenda</p></div><button onclick="closeDayAgenda()">← Calendar</button></div><div class="box"><div class="actions"><button class="save" onclick="addJobForSelectedDay()">+ Add Job</button><button onclick="addEventForSelectedDay()">+ Add Event</button></div><div class="clientList">${rows}</div><h3>Quick Agenda Item</h3><div class="addRow"><input id="newAgendaTime" placeholder="Time"><input id="newAgendaTitle" placeholder="Title"><button onclick="addAgenda()">Add</button></div></div>`;
+}
+
+function renderSupplyList(){
+ ensureV2Collections();let items=Object.values(state.supplyItems||{}).sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')));
+ return `<div class="titleRow"><div><h2>Supplies List</h2><p>Supplies, quantities, usage cost, and remaining inventory.</p></div><button class="save" onclick="startNewSupplyItem()">+ Add New Supply</button></div><div class="clientList supplyList">${items.map(item=>{recalcSupplyRemaining(item.id,{silent:true});return `<div class="supplyCard" onclick="openSupplyItem('${item.id}')">${item.photo?`<img src="${item.photo}" class="supplyThumb">`:'<div class="supplyThumb placeholder">No Photo</div>'}<span><b>${escapeHtml(item.name||'Unnamed Supply')}</b><small>${escapeHtml(item.supplier||'')} • Remaining: ${formatQty(item.quantityRemaining,item.unit)}</small><small>Cost/unit: ${money(item.pricePerUnit)}</small></span></div>`}).join('')||'<p class="note">No supplies yet.</p>'}</div>`;
+}
+
+function renderBankingTrackers(){
+ ensureBanking();let t=bankTotals(),cats=Object.entries(t.byCategory||{}).sort((a,b)=>b[1]-a[1]);
+ return `<div class="titleRow"><div><h2>Money Trackers</h2><p>Money received, spent, saved, and currently available.</p></div></div><div class="trackers"><div class="tracker">Received<b>${money(t.income)}</b></div><div class="tracker">Spent<b>${money(t.spent)}</b></div><div class="tracker">Saved<b>${money(t.saved)}</b></div><div class="tracker">Available<b>${money(t.spendingBalance)}</b></div></div>${renderSavingsGoalsPanel()}<div class="box"><h3>Spending By Category</h3>${cats.map(([cat,amt])=>`<div class="bankCatRow"><span>${escapeHtml(cat)}</span><b>${money(amt)}</b></div>`).join('')||'<p class="note">No spending categories yet.</p>'}</div>`;
+}
+
+function renderAdminPage(){
+ return `<div class="titleRow"><div><h2>Admin</h2><p>Backups, recovery, reports, and app controls.</p></div><span class="buildBadge">NICK REBUILD V2</span></div>${renderAdminBackupPanel()}${renderHumanReportPanel()}<div class="box"><h3>App Controls</h3><div class="actions"><button onclick="toggleViewMode()">Switch Mobile/Desktop View</button><button onclick="openTutorial()">Open Guide</button><button onclick="forceFreshApp()">Refresh App Files</button></div><p class="note">Refreshing app files does not intentionally erase saved records. Always export a backup before major updates.</p></div>`;
+}
+
+function renderEquipment(){
+ ensureV2Collections();
+ return `<div class="titleRow"><div><h2>Equipment</h2><p>Track tools and equipment independently from supplies.</p></div><button class="save" onclick="addEquipment()">+ Add Equipment</button></div><div class="clientList">${state.equipment.map(eq=>`<div class="equipmentCard"><div class="equipmentPhoto">${eq.photo?`<img src="${eq.photo}">`:'No Photo'}</div><div class="equipmentFields"><label>Item<input value="${escapeHtml(eq.item||'')}" oninput="updateEquipment('${eq.id}','item',this.value)"></label><div class="two"><label>Brand<input value="${escapeHtml(eq.brand||'')}" oninput="updateEquipment('${eq.id}','brand',this.value)"></label><label>Model<input value="${escapeHtml(eq.model||'')}" oninput="updateEquipment('${eq.id}','model',this.value)"></label></div><div class="two"><label>Size<input value="${escapeHtml(eq.size||'')}" oninput="updateEquipment('${eq.id}','size',this.value)"></label><label>Serial Number<input value="${escapeHtml(eq.serial||'')}" oninput="updateEquipment('${eq.id}','serial',this.value)"></label></div><div class="two"><label>Purchase Date<input type="date" value="${escapeHtml(eq.purchaseDate||'')}" oninput="updateEquipment('${eq.id}','purchaseDate',this.value)"></label><label>Purchase Price<input type="number" step="0.01" value="${escapeHtml(eq.purchasePrice||'')}" oninput="updateEquipment('${eq.id}','purchasePrice',this.value)"></label></div><label>Condition<input value="${escapeHtml(eq.condition||'')}" placeholder="Good, needs repair, etc." oninput="updateEquipment('${eq.id}','condition',this.value)"></label><label>Notes<textarea oninput="updateEquipment('${eq.id}','notes',this.value)">${escapeHtml(eq.notes||'')}</textarea></label><div class="actions"><label class="fileButton"><input type="file" accept="image/*" capture="environment" onchange="attachEquipmentPhoto(event,'${eq.id}')">Add Photo</label><button class="delete" onclick="deleteEquipment('${eq.id}')">Delete</button></div></div></div>`).join('')||'<p class="note">No equipment added yet.</p>'}</div>`;
+}
+function addEquipment(){state.equipment.unshift({id:uid(),item:'',brand:'',model:'',size:'',serial:'',purchaseDate:'',purchasePrice:'',condition:'',notes:'',photo:''});save('equipment-add');render();}
+function updateEquipment(id,key,value){let eq=state.equipment.find(x=>x.id===id);if(!eq)return;eq[key]=value;save('equipment-update');}
+function deleteEquipment(id){if(!confirm('Delete this equipment record?'))return;state.equipment=state.equipment.filter(x=>x.id!==id);save('equipment-delete');render();}
+function attachEquipmentPhoto(event,id){let file=event.target.files?.[0];if(!file)return;let r=new FileReader();r.onload=()=>{let eq=state.equipment.find(x=>x.id===id);if(eq){eq.photo=r.result;save('equipment-photo');render();}};r.readAsDataURL(file);}
+
+function newInvoice(){let inv=createBlankInvoice('');inv.workLines=[{id:uid(),description:'',hours:'',rate:'',amount:''}];inv.description='';inv.total=0;state.selectedInvoiceId=inv.id;save('invoice-new');renderInvoiceEditor(inv.id);}
+function invoiceWorkTotal(inv){return normalizeMoneyNumber((inv.workLines||[]).reduce((sum,line)=>sum+toNumber(line.amount,0),0),2);}
+function addInvoiceWork(id){let inv=state.invoices.find(i=>i.id===id);if(!inv)return;if(!Array.isArray(inv.workLines))inv.workLines=[];inv.workLines.push({id:uid(),description:'',hours:'',rate:'',amount:''});save('invoice-work-add');renderInvoiceEditor(id);}
+function updateInvoiceWork(id,lineId,key,value){let inv=state.invoices.find(i=>i.id===id),line=inv?.workLines?.find(x=>x.id===lineId);if(!line)return;line[key]=value;if(key==='hours'||key==='rate')line.amount=normalizeMoneyNumber(toNumber(line.hours,0)*toNumber(line.rate,0),2);inv.total=invoiceWorkTotal(inv);inv.status=getInvoiceStatus(inv).toLowerCase();save('invoice-work-update');clearTimeout(window._v2InvRefresh);window._v2InvRefresh=setTimeout(()=>renderInvoiceEditor(id),350);}
+function removeInvoiceWork(id,lineId){let inv=state.invoices.find(i=>i.id===id);if(!inv)return;inv.workLines=(inv.workLines||[]).filter(x=>x.id!==lineId);if(!inv.workLines.length)inv.workLines.push({id:uid(),description:'',hours:'',rate:'',amount:''});inv.total=invoiceWorkTotal(inv);save('invoice-work-remove');renderInvoiceEditor(id);}
+function invoiceEditorHtml(inv){
+ if(!Array.isArray(inv.workLines)||!inv.workLines.length)inv.workLines=[{id:uid(),description:inv.description||'',hours:'',rate:'',amount:inv.total||''}];inv.total=invoiceWorkTotal(inv);
+ let works=inv.workLines.map((line,idx)=>`<div class="workLine"><div class="workLineHead"><b>Work ${idx+1}</b>${inv.workLines.length>1?`<button class="delete smallBtn" onclick="removeInvoiceWork('${inv.id}','${line.id}')">Remove</button>`:''}</div><label>Description<input value="${escapeHtml(line.description||'')}" oninput="updateInvoiceWork('${inv.id}','${line.id}','description',this.value)"></label><div class="three"><label>Hours<input type="number" step="0.25" value="${escapeHtml(line.hours||'')}" oninput="updateInvoiceWork('${inv.id}','${line.id}','hours',this.value)"></label><label>Rate<input type="number" step="0.01" value="${escapeHtml(line.rate||'')}" oninput="updateInvoiceWork('${inv.id}','${line.id}','rate',this.value)"></label><label>Amount<input type="number" step="0.01" value="${escapeHtml(line.amount||'')}" oninput="updateInvoiceWork('${inv.id}','${line.id}','amount',this.value)"></label></div></div>`).join('');
+ return `<div class="titleRow"><div><h2>Invoice #${inv.number}</h2><p>Manual invoice. Add as many work entries as needed.</p></div><button onclick="setTab('invoices')">Back to Invoices</button></div><div class="invoiceGrid"><div class="box"><label>Client</label><input value="${escapeHtml(inv.client||'')}" oninput="updateNickInvoice('${inv.id}','client',this.value)"><label>Date</label><input type="date" value="${escapeHtml(toDateInput(inv.date))}" oninput="updateNickInvoice('${inv.id}','date',this.value)"><h3>Work</h3>${works}<button class="save" onclick="addInvoiceWork('${inv.id}')">+ Add Work</button><div class="invoiceTotalRow"><span>Invoice Total</span><b>${money(inv.total)}</b></div><label>Amount Paid</label><input type="number" step="0.01" value="${Number(inv.paid||0)}" oninput="updateNickInvoice('${inv.id}','paid',this.value)"><label>Payment Method</label><input value="${escapeHtml(inv.paymentMethod||'Cash')}" oninput="updateNickInvoice('${inv.id}','paymentMethod',this.value)"><label>Notes</label><textarea oninput="updateNickInvoice('${inv.id}','notes',this.value)">${escapeHtml(inv.notes||'')}</textarea><h4>Client Signature</h4><canvas id="signaturePad" class="signature"></canvas><div class="actions"><button onclick="clearInvoiceSignature('${inv.id}')">Clear Signature</button></div><div class="actions"><button class="save" onclick="shareInvoice('${inv.id}','text')">Text</button><button class="save" onclick="shareInvoice('${inv.id}','email')">Email</button><button onclick="markNickInvoicePaid('${inv.id}')">Mark Paid</button><button class="delete" onclick="deleteInvoice('${inv.id}')">Delete</button></div></div><div class="box receipt">${invoiceReceiptHtml(inv)}</div></div>`;
+}
+function invoiceReceiptHtml(inv){let work=(inv.workLines||[]).map((x,i)=>`<p><b>${i+1}. ${escapeHtml(x.description||'Work')}</b><br>${x.hours?escapeHtml(x.hours)+' hrs × '+money(x.rate)+' = ':''}${money(x.amount)}</p>`).join('');return `<div class="legacyReceipt nickReceipt"><h2>Nick Meridian</h2><p><b>Invoice #:</b> ${inv.number}<br><b>Date:</b> ${escapeHtml(inv.date||'')}<br><b>Client:</b> ${escapeHtml(inv.client||'')}</p><hr>${work}<hr><p><b>Total:</b> ${money(inv.total)}<br><b>Paid:</b> ${money(inv.paid)}<br><b>Balance:</b> ${money(invoiceBalance(inv))}<br><b>Status:</b> ${getInvoiceStatus(inv)}<br><b>Payment:</b> ${escapeHtml(inv.paymentMethod||'')}</p>${inv.signature?`<p><b>Signed:</b><br><img class="sigImg" src="${inv.signature}"></p>`:''}</div>`;}
+function shareInvoice(id,type){let inv=state.invoices.find(i=>i.id===id);if(!inv)return;let lines=(inv.workLines||[]).map((x,i)=>`${i+1}. ${x.description||'Work'} — ${money(x.amount)}`).join('\n');let body=`Invoice #${inv.number}\nDate: ${inv.date||''}\nClient: ${inv.client||''}\n\n${lines}\n\nTotal: ${money(inv.total)}\nPaid: ${money(inv.paid)}\nBalance: ${money(invoiceBalance(inv))}\nStatus: ${getInvoiceStatus(inv)}`;let msg=encodeURIComponent(body);if(type==='text')location.href='sms:?body='+msg;else if(type==='email')location.href='mailto:?subject=Invoice #'+inv.number+'&body='+msg;else if(navigator.share)navigator.share({title:'Invoice #'+inv.number,text:body});else alert(body);}
+
+save('nick-rebuild-v2-migration');
+setTimeout(render,0);

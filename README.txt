@@ -1,24 +1,16 @@
-NICK MERIDIAN — REBUILD V1 TESTING BUILD
+NICK MERIDIAN REBUILD V2 — GITHUB READY
 
-Purpose
-- Clean, simpler rebuild for Nick's hourly/flat-rate service work.
-- Uses a separate storage key and IndexedDB database from Legacy Cut Meridian and the older Nick app.
+Upload all files in this ZIP to the root of the clean Nick Meridian rebuild repository.
 
-Included
-- Schedule: calendar, agenda, New Job, New Event, reminders, and time card.
-- Clients: directory, contact details, totals, job history, and optional manual invoices.
-- Supplies: inventory, cost per unit, physical counts, separate usage logging, cost-used calculation, remaining quantity, and receipt folders.
-- Banking: accounts/register, trackers, categories, and banking receipts.
-- Offline PWA installation, autosave, backup, and restore foundation.
+V2 test changes:
+- Calendar page now shows calendar + time clock only.
+- Tapping a date opens a separate day-agenda page.
+- Removed redundant Client top tab.
+- Manual invoices support multiple work entries with + Add Work.
+- Supplies and supply usage remain independent from jobs, clients, and invoices.
+- Added Equipment tab under Supplies.
+- Banking Trackers now contains only money totals, savings goals, and spending by category.
+- Full receipt system remains under Banking > Receipts.
+- Added Admin section for backup, recovery, reports, guide, view mode, and refresh controls.
 
-Intentionally removed/simplified
-- No Studio, Gallery, Mockup Builder, Product Inventory, Legacy Cut New Project form, daily tasks, or daily notes.
-- Saving a job does not create an invoice.
-- Supply usage does not attach to jobs, clients, or invoices.
-- Invoices are optional, manual, and labor-only for this first testing build.
-
-GitHub Pages
-Upload all files from this ZIP to the ROOT of a new repository or testing branch, then enable GitHub Pages from that branch / root.
-
-Data safety
-The app stores data locally on each phone/browser. Updating GitHub files should not erase data as long as the site URL and storage key remain unchanged. Use Backup before major updates.
+Data storage key remains nick_meridian_rebuild_v1 so test data from V1 remains available during this V2 upgrade.
