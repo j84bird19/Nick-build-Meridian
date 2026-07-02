@@ -2713,3 +2713,108 @@ function shareInvoice(id,type){let inv=state.invoices.find(i=>i.id===id);if(!inv
 
 save('nick-rebuild-v2-migration');
 setTimeout(render,0);
+
+/* =========================================================
+   NICK MERIDIAN REBUILD V3 PATCH
+   Calendar timeline, native event editor, client file routing,
+   and Banking receipt folders.
+   ========================================================= */
+
+function ensureV3Collections(){
+  ensureV2Collections();
+  if(typeof state.clientFileView!=='boolean')state.clientFileView=false;
+  if(typeof state.dayEventEditor!=='boolean')state.dayEventEditor=false;
+}
+
+function render(){
+ ensureV3Collections();applyViewMode();
+ if(!SECTIONS[state.section])state.section='schedule';
+ document.body.dataset.section=state.section;
+ if(!state.tabs[state.section]||!SECTIONS[state.section].tabs.some(t=>t[0]===state.tabs[state.section]))state.tabs[state.section]=SECTIONS[state.section].tabs[0][0];
+ document.querySelectorAll('.sideTab').forEach(b=>b.classList.toggle('active',b.dataset.section===state.section));
+ subtitle.textContent=SECTIONS[state.section].sub;
+ const visibleTabs=SECTIONS[state.section].tabs.filter(t=>!(state.section==='supplies'&&t[0]==='item'));
+ subtabs.innerHTML=visibleTabs.map(t=>{const active=state.tabs[state.section]===t[0]||(state.section==='supplies'&&state.tabs.supplies==='item'&&t[0]==='list');return `<button class="subtab ${active?'active':''}" onclick="setTab('${t[0]}')">${t[1]}</button>`}).join('');
+ const tab=SECTIONS[state.section].tabs.find(t=>t[0]===state.tabs[state.section])||SECTIONS[state.section].tabs[0];
+ if(state.section==='schedule'&&tab[0]==='calendar'){
+   if(state.dayEventEditor){content.innerHTML=renderDayEventEditor();return;}
+   content.innerHTML=state.scheduleDayView?renderDayAgendaPage():renderScheduleCalendar();return;
+ }
+ if(state.section==='schedule'&&tab[0]==='newJob'){content.innerHTML=renderJobForm();return;}
+ if(state.section==='schedule'&&tab[0]==='newEvent'){content.innerHTML=renderEventForm();return;}
+ if(state.section==='clients'&&tab[0]==='directory'){content.innerHTML=state.clientFileView?renderClientRecord():renderClientDirectory();return;}
+ if(state.section==='clients'&&tab[0]==='invoices'){content.innerHTML=renderClientInvoices();return;}
+ if(state.section==='supplies'&&tab[0]==='list'){content.innerHTML=renderSupplyList();return;}
+ if(state.section==='supplies'&&tab[0]==='item'){content.innerHTML=renderSupplyItem();return;}
+ if(state.section==='supplies'&&tab[0]==='equipment'){content.innerHTML=renderEquipment();return;}
+ if(state.section==='banking'&&tab[0]==='accounts'){content.innerHTML=renderBankingAccounts();return;}
+ if(state.section==='banking'&&tab[0]==='trackers'){content.innerHTML=renderBankingTrackers();return;}
+ if(state.section==='banking'&&tab[0]==='receipts'){content.innerHTML=renderBankingReceipts();return;}
+ if(state.section==='admin'){content.innerHTML=renderAdminPage();return;}
+ content.innerHTML=pageTemplate(state.section,tab);
+}
+
+function openClient(n){state.selectedClient=n;state.clientFileView=true;state.section='clients';state.tabs.clients='directory';save('open-client-file');render();}
+function closeClientFile(){state.clientFileView=false;save('close-client-file');render();}
+function renderClientRecord(){
+ syncClientsFromJobs();let n=state.selectedClient||'';
+ if(!n||!state.clients?.[n]){state.clientFileView=false;return renderClientDirectory();}
+ let c=state.clients[n]||{},t=clientTotals(n),jobs=jobsForClient(n);
+ return `<div class="titleRow"><div><h2>${escapeHtml(n)}</h2><p>Client file and job history.</p></div><button onclick="closeClientFile()">← Directory</button></div><div class="trackers"><div class="tracker">Hours<b>${t.hours.toFixed(2)}</b></div><div class="tracker">Charged<b>${money(t.charged)}</b></div><div class="tracker">Paid<b>${money(t.paid)}</b></div><div class="tracker">Balance<b>${money(t.balance)}</b></div></div><div class="box"><label>Name</label><input id="clientNameEdit" value="${escapeHtml(n)}" autocomplete="off"><label>Phone</label><input id="clientPhoneEdit" value="${escapeHtml(c.phone||'')}"><label>Address</label><input id="clientAddressEdit" value="${escapeHtml(c.address||'')}"><label>Notes</label><textarea id="clientNotesEdit">${escapeHtml(c.notes||'')}</textarea><div class="actions"><button class="save" onclick="saveClientEditV3()">Save Client</button></div></div><h3>Job History</h3><div class="clientList">${jobs.map(j=>`<div class="historyCard"><b>${escapeHtml(j.date)} — ${formatTime(j.time)}: ${escapeHtml(j.title)}</b><small>${j.status||''} • ${Number(j.hours||0).toFixed(2)} hrs • Earned ${money(j.owed)} • Paid ${money(j.received)}</small></div>`).join('')||'<p class="note">No jobs for this client yet.</p>'}</div>`;
+}
+function saveClientEditV3(){
+ const old=state.selectedClient,name=document.getElementById('clientNameEdit')?.value.trim();if(!name)return alert('Enter a client name.');
+ const updated={name,phone:document.getElementById('clientPhoneEdit')?.value||'',address:document.getElementById('clientAddressEdit')?.value||'',notes:document.getElementById('clientNotesEdit')?.value||''};
+ if(name!==old){delete state.clients[old];renameClientInJobs(old,name);}state.clients[name]=updated;state.selectedClient=name;save('client-update-v3');render();
+}
+
+function timeToMinutes(value){
+ let s=String(value||'').trim();if(!s)return null;
+ let m=s.match(/^(\d{1,2}):(\d{2})(?:\s*([ap]m))?$/i);if(!m)return null;
+ let h=Number(m[1]),min=Number(m[2]),ap=(m[3]||'').toLowerCase();
+ if(ap==='pm'&&h<12)h+=12;if(ap==='am'&&h===12)h=0;
+ if(h>23||min>59)return null;return h*60+min;
+}
+function timelineLabel(hour){const h=hour%12||12;return `${h}:00 ${hour<12?'AM':'PM'}`;}
+function renderDayAgendaPage(){
+ let data=ensureDay(state.selectedDate),dt=new Date(state.selectedDate+'T12:00:00'),items=(data.agenda||[]).filter(x=>!x.canceled);
+ const startHour=6,endHour=22,rowHeight=58;
+ let lines='';for(let h=startHour;h<=endHour;h++)lines+=`<div class="timelineRow" style="height:${rowHeight}px"><span>${timelineLabel(h)}</span><i></i></div>`;
+ let blocks=items.map((item,idx)=>{let mins=timeToMinutes(item.time);if(mins===null)mins=startHour*60;let end=timeToMinutes(item.endTime);if(end===null||end<=mins)end=mins+60;let top=Math.max(0,(mins-startHour*60)/60*rowHeight),height=Math.max(34,(end-mins)/60*rowHeight);return `<button class="timelineEvent ${item.type||'agenda'}" style="top:${top}px;height:${height}px" onclick="editTimelineItem(${idx})"><b>${formatTime(item.time)}${item.endTime?'–'+formatTime(item.endTime):''}</b><span>${escapeHtml(item.title||'Untitled')}</span></button>`}).join('');
+ return `<div class="titleRow"><div><h2>${dt.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</h2><p>Daily schedule</p></div><div class="actions"><button class="save" onclick="openDayEventEditor()">+ Add</button><button onclick="closeDayAgenda()">← Calendar</button></div></div><div class="dayTimeline"><div class="timelineRows">${lines}</div><div class="timelineEvents">${blocks}</div></div>${items.length?'':'<p class="note">Nothing scheduled for this day. Tap Add to create an event.</p>'}`;
+}
+function editTimelineItem(idx){let item=ensureDay(state.selectedDate).agenda?.[idx];if(!item)return;state.dayEventEditIndex=idx;state.dayEventEditor=true;save('edit-day-event');render();}
+function openDayEventEditor(){state.dayEventEditIndex=null;state.dayEventEditor=true;save('open-day-event-editor');render();}
+function closeDayEventEditor(){state.dayEventEditor=false;state.dayEventEditIndex=null;save('close-day-event-editor');render();}
+function renderDayEventEditor(){
+ const data=ensureDay(state.selectedDate),idx=Number.isInteger(state.dayEventEditIndex)?state.dayEventEditIndex:null,item=idx===null?{}:(data.agenda[idx]||{}),date=item.date||state.selectedDate;
+ return `<div class="titleRow"><div><h2>${idx===null?'Add Event':'Edit Event'}</h2><p>${new Date(state.selectedDate+'T12:00:00').toLocaleDateString()}</p></div><button onclick="closeDayEventEditor()">Cancel</button></div><div class="box eventEditor"><label>Event Title</label><input id="dayEventTitle" value="${escapeHtml(item.title||'')}"><div class="two"><label>Start Date<input id="dayEventStartDate" type="date" value="${escapeHtml(date)}"></label><label>End Date<input id="dayEventEndDate" type="date" value="${escapeHtml(item.endDate||date)}"></label></div><div class="two"><label>Start Time<input id="dayEventStartTime" type="time" value="${escapeHtml(normalizeTimeInput(item.time||''))}"></label><label>End Time<input id="dayEventEndTime" type="time" value="${escapeHtml(normalizeTimeInput(item.endTime||''))}"></label></div><label class="toggleLine"><input id="dayEventAllDay" type="checkbox" ${item.allDay?'checked':''}> All-day event</label><label>Reminder<select id="dayEventReminder"><option value="none">None</option><option value="10">10 minutes before</option><option value="30">30 minutes before</option><option value="60">1 hour before</option><option value="1440">1 day before</option></select></label><label>Notes<textarea id="dayEventNotes">${escapeHtml(item.notes||'')}</textarea></label><div class="actions"><button class="save" onclick="saveDayEvent()">Save Event</button>${idx!==null?'<button class="delete" onclick="deleteDayEvent()">Delete</button>':''}<button onclick="closeDayEventEditor()">Cancel</button></div></div>`;
+}
+function normalizeTimeInput(v){let mins=timeToMinutes(v);if(mins===null)return '';return `${String(Math.floor(mins/60)).padStart(2,'0')}:${String(mins%60).padStart(2,'0')}`;}
+function saveDayEvent(){
+ const title=document.getElementById('dayEventTitle')?.value.trim();if(!title)return alert('Enter an event title.');
+ const startDate=document.getElementById('dayEventStartDate')?.value||state.selectedDate,endDate=document.getElementById('dayEventEndDate')?.value||startDate,time=document.getElementById('dayEventStartTime')?.value||'',endTime=document.getElementById('dayEventEndTime')?.value||'';
+ const item={id:uid(),type:'event',title,date:startDate,endDate,time,endTime,allDay:!!document.getElementById('dayEventAllDay')?.checked,reminder:document.getElementById('dayEventReminder')?.value||'none',notes:document.getElementById('dayEventNotes')?.value||'',canceled:false};
+ const oldData=ensureDay(state.selectedDate),idx=Number.isInteger(state.dayEventEditIndex)?state.dayEventEditIndex:null;
+ if(idx!==null){const old=oldData.agenda[idx]||{};item.id=old.id||item.id;oldData.agenda.splice(idx,1);}
+ ensureDay(startDate).agenda.push(item);state.selectedDate=startDate;let p=parseKey(startDate);state.year=p.y;state.month=p.m;state.dayEventEditor=false;state.dayEventEditIndex=null;state.scheduleDayView=true;save('day-event-save');render();
+}
+function deleteDayEvent(){let idx=state.dayEventEditIndex;if(!Number.isInteger(idx))return;if(!confirm('Delete this event?'))return;ensureDay(state.selectedDate).agenda.splice(idx,1);state.dayEventEditor=false;state.dayEventEditIndex=null;save('day-event-delete');render();}
+
+function renderBankingReceipts(){return renderBankingReceiptManager();}
+function renderBankingReceiptManager(){
+ ensureCollections();const folders=state.supplyReceiptFolders||[],receipts=state.supplyReceipts||[],uncategorized=receipts.filter(r=>!r.folderId),view=state.supplyReceiptView==='list'?'list':'grid';
+ const folderCards=folders.map(f=>renderReceiptFolderCard(f,receipts.filter(r=>r.folderId===f.id).length,false)).join(''),uncategorizedCard=uncategorized.length?renderReceiptFolderCard({id:'',name:'Unfiled Receipts'},uncategorized.length,true):'';
+ return `<div class="titleRow"><div><h2>Receipts</h2><p>Receipt folders, camera capture, and file uploads.</p></div><div class="actions"><button class="save" onclick="newSupplyReceiptFolder()">+ New Folder</button><button class="save" onclick="newSupplyReceipt()">+ Add Receipt</button></div></div>${receiptFolderViewToggleHtml()}<div class="${view==='list'?'receiptFolderList':'receiptFolderGrid'}">${folderCards}${uncategorizedCard}${(!folders.length&&!uncategorized.length)?'<p class="note">No receipt folders or receipts yet.</p>':''}</div>`;
+}
+function openSupplyReceiptsManager(){state.section='banking';state.tabs.banking='receipts';save('open-banking-receipts');render();}
+function openReceiptFolder(folderId){
+ ensureCollections();const folder=folderId?(state.supplyReceiptFolders||[]).find(f=>f.id===folderId):null,receipts=(state.supplyReceipts||[]).filter(r=>folderId?r.folderId===folderId:!r.folderId);
+ content.innerHTML=`<div class="titleRow"><div><h2>${escapeHtml(folder?folder.name:'Unfiled Receipts')}</h2><p>Receipts in this folder.</p></div><div class="actions"><button class="save" onclick="newSupplyReceipt('${folderId||''}')">+ Add Receipt</button><button onclick="openSupplyReceiptsManager()">← Receipts</button></div></div><div class="clientList">${receipts.map(r=>`<div class="invoiceCard" onclick="openSupplyReceipt('${r.id}')"><b>${escapeHtml(r.title||'Receipt')}</b><small>${escapeHtml(r.date||'')} • ${escapeHtml(r.category||'Uncategorized')} • ${money(r.amount)}</small></div>`).join('')||'<p class="note">No receipts in this folder yet.</p>'}</div>`;
+}
+function setSupplyReceiptView(view){state.supplyReceiptView=view==='list'?'list':'grid';save('receipt-view-v3');openSupplyReceiptsManager();}
+
+function renderAdminPage(){return `<div class="titleRow"><div><h2>Admin</h2><p>Backups, recovery, reports, and app controls.</p></div><span class="buildBadge">NICK REBUILD V3</span></div>${renderAdminBackupPanel()}${renderHumanReportPanel()}<div class="box"><h3>App Controls</h3><div class="actions"><button onclick="toggleViewMode()">Switch Mobile/Desktop View</button><button onclick="openTutorial()">Open Guide</button><button onclick="forceFreshApp()">Refresh App Files</button></div><p class="note">Export a backup before major updates.</p></div>`;}
+
+save('nick-rebuild-v3-migration');
+setTimeout(render,0);
